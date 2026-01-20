@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from supabase import Client
 
+from app.core.config import Settings, get_settings
 from app.core.security import CurrentUser, get_current_user, get_supabase_client
 from app.services.quiz import generate_quiz
+from app.services.subscription import check_quiz_limit, increment_quiz_count
 
 router = APIRouter(prefix="/quizzes", tags=["Quizzes"])
 logger = logging.getLogger(__name__)
@@ -58,8 +60,25 @@ async def create_quiz(
     data: QuizCreate,
     current_user: CurrentUser = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> QuizResponse:
     """Generate a new quiz for a material."""
+    # Check quiz limit
+    can_create, current, limit = check_quiz_limit(
+        current_user.id, str(data.material_id), supabase, settings
+    )
+    if not can_create:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Quiz limit reached for this material",
+                "code": "QUIZ_LIMIT_REACHED",
+                "limit": limit,
+                "current": current,
+                "upgrade_url": "/api/v1/payments/create-checkout-session",
+            },
+        )
+
     # Get material and verify ownership
     material_result = (
         supabase.table("materials")
@@ -111,6 +130,9 @@ async def create_quiz(
         })
         .execute()
     )
+
+    # Increment quiz count for material
+    increment_quiz_count(str(data.material_id), supabase)
 
     quiz_data = result.data[0]
     return QuizResponse(
