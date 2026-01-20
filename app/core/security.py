@@ -5,7 +5,6 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from jose.backends import ECKey
 from pydantic import BaseModel
 from supabase import Client, create_client
 
@@ -32,8 +31,11 @@ security = HTTPBearer()
 
 
 def get_supabase_client(settings: Settings = Depends(get_settings)) -> Client:
-    """Get Supabase client instance."""
-    return create_client(settings.supabase_url, settings.supabase_key)
+    """Get Supabase client instance based on environment."""
+    return create_client(
+        settings.get_active_supabase_url(),
+        settings.get_active_supabase_key()
+    )
 
 
 def verify_token(
@@ -44,8 +46,8 @@ def verify_token(
     token = credentials.credentials
 
     try:
-        # Parse the JWK from settings
-        jwk = json.loads(settings.supabase_jwt_secret)
+        # Parse the JWK from settings (use active JWT secret)
+        jwk = json.loads(settings.get_active_supabase_jwt_secret())
 
         payload = jwt.decode(
             token,
