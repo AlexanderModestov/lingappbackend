@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import auth, cards, chat, materials, quizzes
+from app.routers import auth, cards, chat, materials, payments, quizzes
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(cards.router, prefix=settings.api_v1_prefix)
     app.include_router(quizzes.router, prefix=settings.api_v1_prefix)
     app.include_router(chat.router, prefix=settings.api_v1_prefix)
+    app.include_router(payments.router, prefix=settings.api_v1_prefix)
 
     return app
 
