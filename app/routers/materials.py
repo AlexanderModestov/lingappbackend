@@ -16,6 +16,7 @@ from fastapi import (
 )
 from supabase import Client
 
+from app.core.config import Settings, get_settings
 from app.core.security import CurrentUser, get_current_user, get_supabase_client
 from app.models.schemas import (
     MaterialCreateYouTube,
@@ -26,6 +27,7 @@ from app.models.schemas import (
     SourceType,
 )
 from app.services.doc_parser import is_supported_file, parse_document
+from app.services.subscription import check_upload_limit, increment_upload_count
 from app.services.vocabulary import extract_keywords_from_text
 from app.services.yt_parser import extract_transcript
 
@@ -104,8 +106,23 @@ async def upload_youtube_material(
     data: MaterialCreateYouTube,
     current_user: CurrentUser = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> MaterialResponse:
     """Create a new material from a YouTube URL."""
+    # Check upload limit
+    can_upload, current, limit = check_upload_limit(current_user.id, supabase, settings)
+    if not can_upload:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Upload limit reached",
+                "code": "UPLOAD_LIMIT_REACHED",
+                "limit": limit,
+                "current": current,
+                "upgrade_url": "/api/v1/payments/create-checkout-session",
+            },
+        )
+
     result = (
         supabase.table("materials")
         .insert(
@@ -120,6 +137,9 @@ async def upload_youtube_material(
         .execute()
     )
 
+    # Increment upload count after successful creation
+    increment_upload_count(current_user.id, supabase)
+
     return MaterialResponse(**result.data[0])
 
 
@@ -129,8 +149,23 @@ async def upload_file_material(
     file: UploadFile = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> MaterialResponse:
     """Upload a file (PDF, DOCX) and create a new material."""
+    # Check upload limit
+    can_upload, current, limit = check_upload_limit(current_user.id, supabase, settings)
+    if not can_upload:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Upload limit reached",
+                "code": "UPLOAD_LIMIT_REACHED",
+                "limit": limit,
+                "current": current,
+                "upgrade_url": "/api/v1/payments/create-checkout-session",
+            },
+        )
+
     # Validate file type
     file_ext = Path(file.filename or "").suffix.lower()
     if not is_supported_file(file.filename or ""):
@@ -165,6 +200,9 @@ async def upload_file_material(
         )
         .execute()
     )
+
+    # Increment upload count after successful creation
+    increment_upload_count(current_user.id, supabase)
 
     return MaterialResponse(**result.data[0])
 
