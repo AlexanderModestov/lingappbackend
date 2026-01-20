@@ -9,6 +9,7 @@ from supabase import Client
 
 from app.core.security import CurrentUser, get_current_user, get_supabase_client
 from app.services.chat import get_chat_response
+from app.services.subscription import check_chat_access
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 logger = logging.getLogger(__name__)
@@ -75,6 +76,17 @@ async def send_message(
     supabase: Client = Depends(get_supabase_client),
 ) -> ChatResponse:
     """Send a message and get AI response."""
+    # Check chat access (Pro only)
+    if not check_chat_access(current_user.id, supabase):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Chat is only available for Pro users",
+                "code": "CHAT_ACCESS_DENIED",
+                "upgrade_url": "/api/v1/payments/create-checkout-session",
+            },
+        )
+
     # Get material and verify ownership
     material_result = (
         supabase.table("materials")
